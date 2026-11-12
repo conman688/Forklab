@@ -11,3 +11,8 @@ dependencies = [
 dev = [
     "pytest>=9.2.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests", "spikes"]
+markers = ["docker: needs a running Docker daemon"]
