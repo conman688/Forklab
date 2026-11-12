@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Lint
+        run: uvx ruff@0.17.4 check src tests spikes
+      - name: Check Docker is available
+        run: docker info --format '{{.ServerVersion}} {{.OperatingSystem}}'
+      - name: Pull pinned test image
+        run: docker pull python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+      - name: Test (no test may be skipped; no containers may be left behind)
+        run: |
+          set -o pipefail
+          uv run pytest -q -rs 2>&1 | tee pytest.log
+          if grep -qi "skipped" pytest.log; then echo "::error::tests were skipped"; exit 1; fi
+          leftover="$(docker ps -aq --filter name=forklab-)"
+          if [ -n "$leftover" ]; then echo "::error::leftover containers: $leftover"; exit 1; fi
