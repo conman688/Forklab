@@ -100,7 +100,7 @@ def test_unknown_call_id_is_refused():
 def test_duplicate_call_id_is_refused():
     rec = recording()
     rec.insert(2, ChatMessageAssistant(content="dup", tool_calls=[ToolCall(id=FORK, function="run_tests", arguments={})]))
-    with pytest.raises(ForkRefused, match="found in 2"):
+    with pytest.raises(ForkRefused, match="duplicate tool call ids"):
         build_fork_prefix(rec, FORK, SUBSTITUTED)
 
 
@@ -116,21 +116,107 @@ def test_multi_call_turn_is_refused():
 
 def test_missing_recorded_result_is_refused():
     rec = recording()[:5]
-    with pytest.raises(ForkRefused, match="0 results"):
+    with pytest.raises(ForkRefused, match="not the result of"):
         build_fork_prefix(rec, FORK, SUBSTITUTED)
 
 
 def test_unanswered_earlier_call_is_refused():
     rec = recording()
     del rec[3]
-    with pytest.raises(ForkRefused, match="without exactly one result"):
+    with pytest.raises(ForkRefused, match="while calls are unanswered"):
         build_fork_prefix(rec, FORK, SUBSTITUTED)
 
 
 def test_tool_message_for_unknown_call_is_refused():
     rec = recording()
     rec.insert(2, ChatMessageTool(content="x", tool_call_id="toolu_ghost", function="f"))
-    with pytest.raises(ForkRefused, match="unknown tool call"):
+    with pytest.raises(ForkRefused, match="no pending call"):
+        build_fork_prefix(rec, FORK, SUBSTITUTED)
+
+
+@pytest.mark.parametrize("intruder", [
+    pytest.param(ChatMessageUser(content="interrupt"), id="user"),
+    pytest.param(ChatMessageAssistant(content="thinking aloud"), id="assistant"),
+    pytest.param(ChatMessageTool(content="x", tool_call_id=EARLIER, function="list_dir"), id="other-result"),
+    pytest.param(ChatMessageAssistant(content="more", tool_calls=[
+        ToolCall(id="toolu_other", function="list_dir", arguments={})]), id="another-call"),
+])
+def test_fork_result_must_immediately_follow_fork_turn(intruder):
+    rec = recording()
+    rec.insert(5, intruder)
+    with pytest.raises(ForkRefused, match="not the result of"):
+        build_fork_prefix(rec, FORK, SUBSTITUTED)
+
+
+def test_duplicate_earlier_call_ids_are_refused():
+    rec = recording()
+    rec[2:2] = [
+        ChatMessageAssistant(content="a", tool_calls=[ToolCall(id=EARLIER, function="list_dir", arguments={})]),
+        ChatMessageTool(content="r", tool_call_id=EARLIER, function="list_dir"),
+    ]
+    with pytest.raises(ForkRefused, match="duplicate tool call ids"):
+        build_fork_prefix(rec, FORK, SUBSTITUTED)
+
+
+def test_duplicate_call_id_after_fork_point_is_refused():
+    rec = recording()
+    rec += [
+        ChatMessageAssistant(content="b", tool_calls=[ToolCall(id=EARLIER, function="list_dir", arguments={})]),
+        ChatMessageTool(content="r", tool_call_id=EARLIER, function="list_dir"),
+    ]
+    with pytest.raises(ForkRefused, match="duplicate tool call ids"):
+        build_fork_prefix(rec, FORK, SUBSTITUTED)
+
+
+def _two_call_earlier_turn(first_result_id, second_result_id):
+    rec = recording()
+    rec[2:4] = [
+        ChatMessageAssistant(content="two", tool_calls=[
+            ToolCall(id="toolu_a", function="list_dir", arguments={}),
+            ToolCall(id="toolu_b", function="read_file", arguments={}),
+        ]),
+        ChatMessageTool(content="ra", tool_call_id=first_result_id,
+                        function="list_dir" if first_result_id == "toolu_a" else "read_file"),
+        ChatMessageTool(content="rb", tool_call_id=second_result_id,
+                        function="list_dir" if second_result_id == "toolu_a" else "read_file"),
+    ]
+    return rec
+
+
+def test_earlier_multi_call_results_in_order_are_accepted():
+    build_fork_prefix(_two_call_earlier_turn("toolu_a", "toolu_b"), FORK, SUBSTITUTED)
+
+
+def test_earlier_results_out_of_call_order_are_refused():
+    with pytest.raises(ForkRefused, match="expected next"):
+        build_fork_prefix(_two_call_earlier_turn("toolu_b", "toolu_a"), FORK, SUBSTITUTED)
+
+
+def test_earlier_result_after_a_user_message_is_refused():
+    rec = recording()
+    rec.insert(3, ChatMessageUser(content="hurry up"))
+    with pytest.raises(ForkRefused, match="while calls are unanswered"):
+        build_fork_prefix(rec, FORK, SUBSTITUTED)
+
+
+def test_earlier_result_with_wrong_function_is_refused():
+    rec = recording()
+    rec[3] = ChatMessageTool(content="src\n", tool_call_id=EARLIER, function="read_file")
+    with pytest.raises(ForkRefused, match="names function"):
+        build_fork_prefix(rec, FORK, SUBSTITUTED)
+
+
+def test_recorded_fork_result_with_wrong_function_is_refused():
+    rec = recording()
+    rec[5] = ChatMessageTool(content=RECORDED, tool_call_id=FORK, function="list_dir")
+    with pytest.raises(ForkRefused, match="names function"):
+        build_fork_prefix(rec, FORK, SUBSTITUTED)
+
+
+def test_system_message_mid_transcript_is_refused():
+    rec = recording()
+    rec.insert(2, ChatMessageSystem(content="new rules"))
+    with pytest.raises(ForkRefused, match="system message after"):
         build_fork_prefix(rec, FORK, SUBSTITUTED)
 
 

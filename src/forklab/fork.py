@@ -44,6 +44,52 @@ def _check_content(index: int, message: ChatMessage) -> None:
             )
 
 
+def _validate_order(messages: Sequence[ChatMessage]) -> None:
+    """Check `messages` as an ordered tool-call state machine.
+
+    - System messages only before any other message.
+    - Every tool call ID is unique across `messages`.
+    - After an assistant turn with N tool calls, the next N messages are
+      exactly their results, in call order, each naming the called function.
+    - No user or assistant message while a call is pending, and no tool
+      message unless it answers the next pending call.
+    """
+    seen: set[str] = set()
+    pending: list[tuple[str, str]] = []  # (call id, function), in call order
+    started = False
+    for i, m in enumerate(messages):
+        if isinstance(m, ChatMessageSystem):
+            if started:
+                raise ForkRefused(f"message {i}: system message after the conversation started")
+            continue
+        started = True
+        if isinstance(m, ChatMessageTool):
+            if not pending:
+                raise ForkRefused(f"message {i}: tool result {m.tool_call_id!r} with no pending call")
+            call_id, function = pending.pop(0)
+            if m.tool_call_id != call_id:
+                raise ForkRefused(
+                    f"message {i}: result for {m.tool_call_id!r} where {call_id!r} was expected next"
+                )
+            if m.function != function:
+                raise ForkRefused(
+                    f"message {i}: result names function {m.function!r}, call was {function!r}"
+                )
+            continue
+        if pending:
+            raise ForkRefused(
+                f"message {i} ({m.role}) while calls are unanswered: {[c for c, _ in pending]}"
+            )
+        if isinstance(m, ChatMessageAssistant):
+            for call in m.tool_calls or []:
+                if call.id in seen:
+                    raise ForkRefused(f"message {i}: duplicate tool call id {call.id!r}")
+                seen.add(call.id)
+                pending.append((call.id, call.function))
+        elif not isinstance(m, ChatMessageUser):
+            raise ForkRefused(f"message {i} has unsupported type {type(m).__name__}")
+
+
 def build_fork_prefix(
     recording: Sequence[ChatMessage],
     fork_call_id: str,
@@ -51,17 +97,22 @@ def build_fork_prefix(
 ) -> list[ChatMessage]:
     """Return the fork prefix ending in the substituted tool result.
 
-    Refuses when:
-    - the fork call does not appear exactly once, in an assistant turn;
-    - that turn makes more than one tool call (sibling results are not modelled);
-    - the recording has no tool result for the fork call (not a post-tool boundary);
-    - any prefix message has non-text content (thinking blocks included);
-    - any prefix message has an unsupported role, a tool message in the
-      prefix answers a call the prefix never made, or an earlier call does
-      not have exactly one result.
+    The recording up to and including the recorded fork result must be a
+    valid ordered transcript (see _validate_order). Additionally refuses when:
+    - any tool call id appears more than once in the whole recording;
+    - the fork call does not appear exactly once in the whole recording;
+    - the fork turn makes more than one tool call (sibling results are not modelled);
+    - the message right after the fork turn is not the fork call's result
+      (not a recorded post-tool boundary);
+    - any prefix message has non-text content (thinking blocks included).
     """
     if not isinstance(substituted_result, str):
         raise ForkRefused("substituted result must be a string")
+
+    all_ids = [c.id for m in recording if isinstance(m, ChatMessageAssistant) for c in m.tool_calls or []]
+    duplicates = sorted({c for c in all_ids if all_ids.count(c) > 1})
+    if duplicates:
+        raise ForkRefused(f"duplicate tool call ids in recording: {duplicates}")
 
     owners = [
         i for i, m in enumerate(recording)
@@ -76,33 +127,17 @@ def build_fork_prefix(
         raise ForkRefused(f"fork turn makes {len(calls)} tool calls; only single-call turns are supported")
     call = calls[0]
 
-    recorded = [
-        m for m in recording[t + 1:]
-        if isinstance(m, ChatMessageTool) and m.tool_call_id == fork_call_id
-    ]
-    if len(recorded) != 1:
+    boundary = recording[t + 1] if t + 1 < len(recording) else None
+    if not (isinstance(boundary, ChatMessageTool) and boundary.tool_call_id == fork_call_id):
         raise ForkRefused(
-            f"recording has {len(recorded)} results for {fork_call_id!r}; "
-            "a fork needs exactly one recorded post-tool boundary"
+            f"message after the fork turn is not the result of {fork_call_id!r}; "
+            "a fork needs a recorded post-tool boundary"
         )
+    _validate_order(recording[: t + 2])
 
     prefix = list(recording[: t + 1])
-    made_calls: set[str] = set()
-    answered: dict[str, int] = {}
     for i, m in enumerate(prefix):
-        if not isinstance(m, (ChatMessageSystem, ChatMessageUser, ChatMessageAssistant, ChatMessageTool)):
-            raise ForkRefused(f"message {i} has unsupported type {type(m).__name__}")
         _check_content(i, m)
-        if isinstance(m, ChatMessageAssistant):
-            made_calls.update(c.id for c in m.tool_calls or [])
-        if isinstance(m, ChatMessageTool):
-            if m.tool_call_id not in made_calls:
-                raise ForkRefused(f"message {i} answers unknown tool call {m.tool_call_id!r}")
-            answered[m.tool_call_id] = answered.get(m.tool_call_id, 0) + 1
-    earlier = made_calls - {fork_call_id}
-    unanswered = sorted(c for c in earlier if answered.get(c) != 1)
-    if unanswered:
-        raise ForkRefused(f"earlier tool calls without exactly one result: {unanswered}")
 
     copied = [m.model_copy(deep=True) for m in prefix]
     copied.append(
