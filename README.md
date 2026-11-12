@@ -12,3 +12,11 @@ Requires Python 3.12, [uv](https://docs.astral.sh/uv/) and Docker.
 ```bash
 uv sync
 ```
+
+## Tests
+
+```bash
+uv run pytest -q
+```
+
+Tests marked `docker` need a running Docker daemon and are skipped without one.
