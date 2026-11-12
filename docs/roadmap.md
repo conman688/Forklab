@@ -79,6 +79,10 @@ This design gives four properties:
 
 Optional syscall tracing (Phase 3) narrows some of these gaps. It does **not** close them.
 
+**Precondition before untrusted trials: bounded disk.** The current executor mounts `/workspace` and `/out` as plain bind mounts with **no storage quota**. Agent code can fill the host disk or the Docker VM disk. Neither the timeout nor the memory limit bounds filesystem writes. The executor is therefore **not safe against disk exhaustion**.
+
+Before any trial runs agent-written code, `/workspace` and `/out` must be quota-backed, for example by a fixed-size loopback filesystem, an XFS project quota, or a size-limited volume. A test must show that writing past the quota fails inside the container and leaves the host unaffected. Until then, executor runs are limited to trusted fixtures.
+
 ### 1.2 Snapshots and their timing
 
 For tool call t:
@@ -305,6 +309,7 @@ The spike answers three questions:
 
 **Never cut to meet the deadline:**
 - the per-call container isolation flags;
+- the disk quota on `/workspace` and `/out`, once it exists (until then, no untrusted trials);
 - the S_before/S_after snapshots and the MATCH check;
 - the oracle's isolation and the integrity scan;
 - outcome categorization.

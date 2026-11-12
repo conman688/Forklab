@@ -1,15 +1,32 @@
 """Per-call disposable container executor (roadmap §1.1).
 
-Every tool call runs in a fresh `docker run --rm` container with:
+Every tool call runs in a fresh container with:
 - the root filesystem read-only and no network;
 - all capabilities dropped and no-new-privileges set;
 - pid, memory and CPU limits;
-- a size-limited tmpfs at /tmp that is discarded when the call ends.
+- a size-limited tmpfs at /tmp that is discarded when the call ends;
+- no daemon-side log storage (`--log-driver none`).
 
 Only the host workspace (/workspace) and a per-call output dir (/out) are
-writable. When the call ends, the container is removed, which kills every
-process in its PID namespace; the executor then checks that the container
-is gone and raises if it is not.
+writable.
+
+Lifecycle: `docker create` returns the container ID synchronously; the call
+is then run with `docker start --attach <id>`, and in every path the
+container is removed by that ID and its absence is verified with
+`docker inspect`. If removal cannot be verified, run_call raises
+ExecutorError. Removing the container kills every process in its PID
+namespace.
+
+stdout and stderr are drained concurrently while the call runs; only the
+first `output_bytes` of each are kept and the rest is discarded, so captured
+output uses bounded memory and no disk.
+
+NOT BOUNDED: disk writes to /workspace and /out. They are plain bind mounts
+with no storage quota, so agent code can fill the host (or Docker VM) disk.
+Neither the timeout nor the memory limit bounds filesystem writes. The
+executor is therefore NOT safe against disk exhaustion, and must not be used
+for untrusted trials until a quota-backed workspace and output mechanism
+exists (roadmap §1.1 precondition).
 
 The container runs as the host runner's uid:gid (non-root), not a fixed
 1000:1000. That keeps files written to the bind-mounted workspace owned by
@@ -23,11 +40,14 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+# Overridable in tests to inject daemon faults (slow start, failed removal).
+DOCKER = "docker"
 
 FIXED_ENV = {
     "PYTHONHASHSEED": "0",
@@ -36,7 +56,6 @@ FIXED_ENV = {
     "LANG": "C.UTF-8",
     "HOME": "/tmp",
 }
-
 
 # Docker reports its own failures with exit codes (125-127) that a tool can
 # also return, so exit codes cannot tell "the call ran" from "docker failed".
@@ -53,6 +72,9 @@ FIXED_ENV = {
 # never mutate a workspace between calls; it only reads it (snapshots).
 START_MARKER = ".forklab-started"
 LAUNCHER = ["/bin/sh", "-c", f': > /out/{START_MARKER} && exec "$@"', "forklab-launcher"]
+
+CONTROL_TIMEOUT_S = 60.0  # for docker create / rm / inspect
+REMOVAL_VERIFY_S = 10.0
 
 
 class ExecutorError(Exception):
@@ -79,14 +101,17 @@ class CallResult:
     stderr: bytes
     stdout_truncated: bool
     stderr_truncated: bool
+    stdout_total_bytes: int  # bytes produced, including discarded ones
+    stderr_total_bytes: int
     timed_out: bool
     duration_s: float
-    container_name: str
+    container_id: str
 
 
-def docker_args(image: str, workspace: Path, out_dir: Path, name: str, limits: Limits) -> list[str]:
+def create_args(image: str, workspace: Path, out_dir: Path, name: str, limits: Limits) -> list[str]:
     args = [
-        "docker", "run", "--rm", "--name", name,
+        DOCKER, "create", "--name", name,
+        "--log-driver", "none",
         "--read-only",
         "--network", "none",
         "--cap-drop", "ALL",
@@ -106,20 +131,48 @@ def docker_args(image: str, workspace: Path, out_dir: Path, name: str, limits: L
     return [*args, image]
 
 
-def _read_capped(f, cap: int) -> tuple[bytes, bool]:
-    f.seek(0)
-    data = f.read(cap + 1)
-    return data[:cap], len(data) > cap
+class _CappedReader(threading.Thread):
+    """Drain a pipe to EOF, keeping only the first `cap` bytes."""
+
+    def __init__(self, pipe, cap: int) -> None:
+        super().__init__(daemon=True)
+        self.pipe, self.cap = pipe, cap
+        self.kept = bytearray()
+        self.total = 0
+
+    def run(self) -> None:
+        for chunk in iter(lambda: self.pipe.read(65536), b""):
+            self.total += len(chunk)
+            room = self.cap - len(self.kept)
+            if room > 0:
+                self.kept += chunk[:room]
+        self.pipe.close()
 
 
-def _container_exists(name: str) -> bool:
-    r = subprocess.run(
-        ["docker", "ps", "--all", "--quiet", "--filter", f"name=^{name}$"],
-        capture_output=True, text=True, check=False,
-    )
-    if r.returncode != 0:
-        raise ExecutorError(f"docker ps failed: {r.stderr.strip()}")
-    return bool(r.stdout.strip())
+def _docker(*args: str) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run([DOCKER, *args], capture_output=True, text=True,
+                              check=False, timeout=CONTROL_TIMEOUT_S)
+    except subprocess.TimeoutExpired as ex:
+        raise ExecutorError(f"docker {args[0]} timed out") from ex
+
+
+def _remove_and_verify(ref: str) -> None:
+    """Remove container `ref` (ID or name) and prove it no longer exists."""
+    rm = _docker("rm", "--force", ref)
+    deadline = time.monotonic() + REMOVAL_VERIFY_S
+    while True:
+        r = _docker("inspect", "--format", "{{.Id}}", ref)
+        if r.returncode != 0 and "no such" in r.stderr.lower():
+            return
+        if r.returncode != 0:
+            raise ExecutorError(f"cannot verify removal of {ref}: {r.stderr.strip()}")
+        if time.monotonic() > deadline:
+            raise ExecutorError(
+                f"container {ref} still exists after removal "
+                f"(rm exit {rm.returncode}: {rm.stderr.strip()})"
+            )
+        time.sleep(0.2)
 
 
 def run_call(
@@ -132,6 +185,8 @@ def run_call(
     """Run `argv` once in a disposable container against `workspace`.
 
     `out_dir` must be an existing, empty directory used for this call only.
+    Raises ExecutorError for any infrastructure failure, including a
+    container whose removal cannot be verified.
     """
     workspace = Path(workspace).resolve(strict=True)
     out_dir = Path(out_dir).resolve(strict=True)
@@ -139,37 +194,69 @@ def run_call(
         raise ExecutorError("workspace and out_dir must be existing directories")
     if "@sha256:" not in image:
         raise ExecutorError(f"image must be pinned by digest: {image!r}")
-
     if any(out_dir.iterdir()):
         raise ExecutorError(f"out_dir must be a fresh, empty directory: {out_dir}")
     marker = out_dir / START_MARKER
 
     name = f"forklab-{uuid.uuid4().hex}"
-    cmd = [*docker_args(image, workspace, out_dir, name, limits), *LAUNCHER, *argv]
+    try:
+        created = subprocess.run(
+            [*create_args(image, workspace, out_dir, name, limits), *LAUNCHER, *argv],
+            capture_output=True, text=True, check=False, timeout=CONTROL_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as ex:
+        # The daemon may still create the container after this point, so a
+        # name lookup now cannot prove there is none. Remove what exists and
+        # fail closed, naming the container an operator may need to clean up.
+        _remove_and_verify(name)
+        raise ExecutorError(
+            f"docker create timed out; a container named {name} may still appear"
+        ) from ex
+    if created.returncode != 0:
+        _remove_and_verify(name)
+        raise ExecutorError(f"docker create failed: {created.stderr.strip()}")
+    cid = created.stdout.strip()
+
     timed_out = False
+    exit_code: int | None = None
+    proc: subprocess.Popen | None = None
+    readers: list[_CappedReader] = []
     start = time.monotonic()
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=err)
+    try:
+        proc = subprocess.Popen([DOCKER, "start", "--attach", cid], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        readers = [_CappedReader(proc.stdout, limits.output_bytes),
+                   _CappedReader(proc.stderr, limits.output_bytes)]
+        for r in readers:
+            r.start()
         try:
-            exit_code: int | None = proc.wait(timeout=limits.timeout_s)
+            exit_code = proc.wait(timeout=limits.timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
-            exit_code = None
+    finally:
+        try:
+            _remove_and_verify(cid)
         finally:
-            # The docker CLI exiting does not stop the container; remove it explicitly.
-            subprocess.run(["docker", "rm", "--force", name], capture_output=True, check=False)
-            if proc.poll() is None:
-                proc.kill()
+            if proc is not None:
+                if proc.poll() is None:
+                    proc.kill()
                 proc.wait()
-        duration = time.monotonic() - start
-        stdout, out_trunc = _read_capped(out, limits.output_bytes)
-        stderr, err_trunc = _read_capped(err, limits.output_bytes)
+            for r in readers:
+                r.join(timeout=10)
+    duration = time.monotonic() - start
+    out_r, err_r = readers
+    stderr = bytes(err_r.kept)
 
-    if _container_exists(name):
-        raise ExecutorError(f"container {name} still exists after the call")
     if not marker.exists():
         raise ExecutorError(
             f"container never started the call (exit {exit_code}): "
             f"{stderr.decode(errors='replace').strip()}"
         )
-    return CallResult(exit_code, stdout, stderr, out_trunc, err_trunc, timed_out, duration, name)
+    return CallResult(
+        exit_code=None if timed_out else exit_code,
+        stdout=bytes(out_r.kept), stderr=stderr,
+        stdout_truncated=out_r.total > limits.output_bytes,
+        stderr_truncated=err_r.total > limits.output_bytes,
+        stdout_total_bytes=out_r.total, stderr_total_bytes=err_r.total,
+        timed_out=timed_out, duration_s=duration, container_id=cid,
+    )
