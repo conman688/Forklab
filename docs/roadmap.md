@@ -1,5 +1,60 @@
 # forklab — Coding-Agent Intervention Lab
-## Final Architecture & Execution Roadmap (v1.0)
+## Final Architecture & Execution Roadmap (v1.1)
+
+v1.1 adds the progress log and the decisions made while building. The plan itself (§0–§6) is unchanged, except for the §1.1 disk-quota precondition added in PR #2.
+
+---
+
+## Progress (as of 2026-11-11)
+
+### Done and merged
+
+| Unit | PR | What it established |
+|---|---|---|
+| Phase 0: Inspect restore spike | #1 | Inspect can carry a fork prefix ending in a substituted tool result (Q1), and the substituted text reaches the provider payload unchanged (Q3). The check used a local stub endpoint, not the live API. Restoring a workspace with full metadata works with a tar plus setup script, but not with `Sample.files` alone (Q2). Full write-up: `spikes/phase0_inspect_restore/FINDINGS.md`. |
+| Per-call container executor and host snapshots | #2 | §1.1 and §1.2 are built as `src/forklab/executor.py` and `src/forklab/snapshot.py`. Each isolation property is checked by a test against a real container. Snapshots stream file contents and refuse anything they cannot restore exactly. |
+| Fork transcript builder | #3 | §1.3 is built as `src/forklab/fork.py`. The recording must be a valid, ordered tool-call transcript. Any non-text content in the prefix, thinking blocks included, is refused. |
+
+### Open
+
+| Unit | PR | Status |
+|---|---|---|
+| CI on Linux with Docker | #4 | Green on its first run: 126 tests passed, none skipped, on Ubuntu 24.04 with Docker 28.0.4. Waiting for review. |
+
+### Phase 1 checklist (§4)
+
+Built:
+- [x] Phase 0 spike (§1.2 restore decision made)
+- [x] Executor with the §1.1 isolation flags
+- [x] Snapshot manifest, content-addressed store, restore with an exact MATCH check
+- [x] Fork transcript built at the post-tool boundary (no re-execution)
+- [x] Replay check on a restored clone (one test only; not yet a 20-run measurement)
+
+Not built yet:
+- [ ] The closed tool set: `read_file`, `write_file`, `list_dir`, `run_tests`
+- [ ] Recorder: capture S_before and S_after around each tool call during a live run
+- [ ] Fork runner: restore S_after_t, build the prefix, resume the agent
+- [ ] Task fixture and oracle screen (20/20 pass, 20/20 fail)
+- [ ] Arms (b) and (c), plus the junit-tuple comparator
+- [ ] Isolated oracle runner, integrity scan, adjudication
+- [ ] Report: categories, Wilson intervals, missingness bounds
+- [ ] **Disk quota on `/workspace` and `/out`. This must be in place before any untrusted trial.**
+- [ ] Pilot run
+
+### Decisions made while building
+
+1. **Inspect's own sandbox is not used for tool calls.** It keeps one long-lived container per sample, running as root. Inspect still drives the model and the agent loop, but tools call forklab's own executor, which starts a fresh container for every call.
+2. **The container runs as the runner's uid:gid**, not the 1000:1000 written in §1.1. That way files written to the workspace are owned by the runner, so snapshots can compare ownership exactly.
+3. **A start marker separates "docker failed" from "tool failed".** Docker's own exit codes (125–127) overlap with tools' exit codes, so a launcher inside the container writes a marker file before running the call. No marker means an infrastructure failure.
+4. **Container lifecycle is create, then start, then remove by ID and confirm removal.** If removal can't be confirmed, the call fails.
+5. **Each call gets a fresh output directory, and the host never edits a live workspace.** On Docker Desktop for macOS, reusing a shared folder after the host deletes a file can break the next container.
+6. **Thinking blocks are refused in fork prefixes** until a live API probe shows that dropped blocks can be detected (Phase 0 finding: Inspect asks the API to *drop* mismatched thinking blocks rather than fail).
+7. **Retries are counted per HTTP attempt.** Even with `max_retries=0`, the provider SDK made 3 attempts on a server error, so the §3 cost reservations must count attempts.
+
+### Open questions and risks
+- **Thinking blocks generated after a fork:** untested. Settling this needs a live probe, which needs a configured provider and a budget.
+- **Disk exhaustion:** not prevented yet. See the precondition in §1.1.
+- **Platforms tested:** macOS arm64 with Docker Desktop 29.8.0, and Ubuntu 24.04 with Docker 28.0.4 (in CI). Rootless Docker is untested.
 
 ---
 
