@@ -1,0 +1,344 @@
+{
+  "environment": {
+    "anthropic_sdk": "2.8.0",
+    "docker_server": "29.8.0",
+    "inspect_ai": "0.3.289",
+    "model_string": "anthropic/claude-sonnet-5-5",
+    "platform": "macOS-15.0.1-arm64-arm-64bit",
+    "python": "3.12.1"
+  },
+  "first_turn": [
+    {
+      "last_message_is_substituted_result": true,
+      "message_shape": [
+        [
+          "user",
+          "str"
+        ],
+        [
+          "assistant",
+          [
+            "text",
+            "tool_use"
+          ]
+        ],
+        [
+          "user",
+          [
+            "tool_result"
+          ]
+        ]
+      ],
+      "substituted_bytes_identical": true,
+      "substituted_text_seen": "FAIL: add(2, 3) == -1  \n→ see src/other.py:12\t(arm b)",
+      "system_present": true,
+      "tool_result_ids": [
+        "toolu_fork_0001"
+      ],
+      "tool_use_ids": [
+        "toolu_fork_0001"
+      ],
+      "tools_declared": [
+        "run_tests"
+      ]
+    },
+    {
+      "last_message_is_substituted_result": true,
+      "message_shape": [
+        [
+          "user",
+          "str"
+        ],
+        [
+          "assistant",
+          [
+            "text",
+            "tool_use"
+          ]
+        ],
+        [
+          "user",
+          [
+            "tool_result"
+          ]
+        ]
+      ],
+      "substituted_bytes_identical": true,
+      "substituted_text_seen": "FAIL: add(2, 3) == -1  \n→ see src/other.py:12\t(arm b)",
+      "system_present": true,
+      "tool_result_ids": [
+        "toolu_fork_0001"
+      ],
+      "tool_use_ids": [
+        "toolu_fork_0001"
+      ],
+      "tools_declared": [
+        "run_tests"
+      ]
+    },
+    {
+      "last_message_is_substituted_result": true,
+      "message_shape": [
+        [
+          "user",
+          "str"
+        ],
+        [
+          "assistant",
+          [
+            "text",
+            "tool_use"
+          ]
+        ],
+        [
+          "user",
+          [
+            "tool_result"
+          ]
+        ]
+      ],
+      "substituted_bytes_identical": true,
+      "substituted_text_seen": "FAIL: add(2, 3) == -1  \n→ see src/other.py:12\t(arm b)",
+      "system_present": true,
+      "tool_result_ids": [
+        "toolu_fork_0001"
+      ],
+      "tool_use_ids": [
+        "toolu_fork_0001"
+      ],
+      "tools_declared": [
+        "run_tests"
+      ]
+    }
+  ],
+  "first_turn_body_sha256": [
+    "86777c078b352c61d3554b698688fe202afcfada433f0ee718f572fc38a56a9a",
+    "86777c078b352c61d3554b698688fe202afcfada433f0ee718f572fc38a56a9a",
+    "86777c078b352c61d3554b698688fe202afcfada433f0ee718f572fc38a56a9a"
+  ],
+  "generated_at": "2026-11-12T02:01:18.977960+00:00",
+  "requests_seen": [
+    {
+      "bytes": 1013,
+      "path": "/v1/messages"
+    },
+    {
+      "bytes": 1280,
+      "path": "/v1/messages"
+    },
+    {
+      "bytes": 1013,
+      "path": "/v1/messages"
+    },
+    {
+      "bytes": 1280,
+      "path": "/v1/messages"
+    },
+    {
+      "bytes": 1013,
+      "path": "/v1/messages"
+    },
+    {
+      "bytes": 1280,
+      "path": "/v1/messages"
+    }
+  ],
+  "samples": {
+    "files_only": {
+      "error": null,
+      "final_assistant": "done",
+      "manifest_stderr": "",
+      "restore_diff": [
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "."
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "."
+        },
+        {
+          "actual": 1794448877077805008,
+          "expected": 1700000000900000001,
+          "field": "mtime_ns",
+          "path": "."
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "README.md"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "README.md"
+        },
+        {
+          "actual": 1794448876427805008,
+          "expected": 1700000000123456789,
+          "field": "mtime_ns",
+          "path": "README.md"
+        },
+        {
+          "path": "empty_dir",
+          "problem": "missing"
+        },
+        {
+          "path": "link_to_calc",
+          "problem": "missing"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src"
+        },
+        {
+          "actual": 1794448876970805008,
+          "expected": 1700000000333333333,
+          "field": "mtime_ns",
+          "path": "src"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src/blob.bin"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src/blob.bin"
+        },
+        {
+          "actual": 1794448876972805008,
+          "expected": 1700000000666666666,
+          "field": "mtime_ns",
+          "path": "src/blob.bin"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src/calc.py"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src/calc.py"
+        },
+        {
+          "actual": 1794448876610805008,
+          "expected": 1700000000444444444,
+          "field": "mtime_ns",
+          "path": "src/calc.py"
+        },
+        {
+          "actual": 420,
+          "expected": 384,
+          "field": "mode",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 1794448876779805008,
+          "expected": 1700000000555555555,
+          "field": "mtime_ns",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "tests"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "tests"
+        },
+        {
+          "actual": 1794448877198805008,
+          "expected": 1700000000777777777,
+          "field": "mtime_ns",
+          "path": "tests"
+        },
+        {
+          "actual": 420,
+          "expected": 493,
+          "field": "mode",
+          "path": "tests/run.py"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "tests/run.py"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "tests/run.py"
+        },
+        {
+          "actual": 1794448877198805008,
+          "expected": 1700000000888888888,
+          "field": "mtime_ns",
+          "path": "tests/run.py"
+        }
+      ]
+    },
+    "tar_restore_a": {
+      "error": null,
+      "final_assistant": "done",
+      "manifest_stderr": "",
+      "restore_diff": []
+    },
+    "tar_restore_b": {
+      "error": null,
+      "final_assistant": "done",
+      "manifest_stderr": "",
+      "restore_diff": []
+    }
+  },
+  "second_turn_live_tool_results": [
+    "FAIL: add(2, 3) == -1\n",
+    "FAIL: add(2, 3) == -1\n",
+    "FAIL: add(2, 3) == -1\n"
+  ],
+  "verdict": {
+    "Q1_prefix_accepted_as_input": true,
+    "Q2_files_only_restore_exact": false,
+    "Q2_tar_setup_restore_exact": true,
+    "Q3_substituted_result_byte_identical": true,
+    "first_turn_payloads_byte_identical": true,
+    "loop_resumed_and_executed_tool_in_restored_workspace": true
+  }
+}
