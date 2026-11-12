@@ -12,11 +12,15 @@ symlink permission bits, extended attributes, ACLs and file flags.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import stat
+import tempfile
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import BinaryIO
 
 COMPARED_FIELDS = ("type", "mode", "uid", "gid", "size", "mtime_ns", "sha256", "link")
 ROOT = "."
@@ -43,7 +47,7 @@ def _sha256_file(path: str) -> str:
     h = hashlib.sha256()
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
+        for chunk in iter(lambda: f.read(CHUNK), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -112,33 +116,53 @@ class Store:
         (self.root / "blobs").mkdir(parents=True, exist_ok=True)
         (self.root / "manifests").mkdir(parents=True, exist_ok=True)
 
-    def _put_bytes(self, path: Path, data: bytes) -> None:
-        if path.exists():
-            return
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, path)
+    def _publish(self, final: Path, write: Callable[[BinaryIO], None]) -> None:
+        """Write via a unique temp file in the same directory, then atomically rename.
 
-    def read_blob(self, sha: str) -> bytes:
-        data = (self.root / "blobs" / sha).read_bytes()
-        if hashlib.sha256(data).hexdigest() != sha:
-            raise SnapshotError(f"blob {sha} is corrupt")
-        return data
+        Concurrent publishers of the same content each use their own temp file;
+        os.replace makes the final name appear complete or not at all.
+        """
+        fd, tmp = tempfile.mkstemp(dir=final.parent, prefix=".tmp-")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                write(f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, final)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(tmp)
+            raise
+
+    def _store_file(self, src: str, expected_sha: str, rel: str) -> None:
+        final = self.root / "blobs" / expected_sha
+        if final.exists():
+            return  # content-addressed; corruption is caught when the blob is read
+
+        def write(dst: BinaryIO) -> None:
+            fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as f:
+                if _copy_hashing(f, dst) != expected_sha:
+                    raise SnapshotError(f"{rel!r} changed during capture")
+
+        self._publish(final, write)
 
     def capture(self, workspace: str | os.PathLike) -> str:
-        """Snapshot `workspace` into the store; return the manifest id."""
+        """Snapshot `workspace` into the store; return the manifest id.
+
+        File contents are streamed in fixed-size chunks; no file is held in
+        memory whole.
+        """
+        workspace = os.fspath(workspace)
         m = manifest(workspace)
         for rel, e in m.items():
             if e["type"] == "file":
-                data = _read_nofollow(os.path.join(workspace, rel))
-                if hashlib.sha256(data).hexdigest() != e["sha256"]:
-                    raise SnapshotError(f"{rel!r} changed during capture")
-                self._put_bytes(self.root / "blobs" / e["sha256"], data)
+                self._store_file(os.path.join(workspace, rel), e["sha256"], rel)
         if manifest(workspace) != m:
             raise SnapshotError("workspace changed during capture")
         mid = manifest_id(m)
-        self._put_bytes(self.root / "manifests" / f"{mid}.json",
-                        json.dumps(m, sort_keys=True, separators=(",", ":")).encode())
+        data = json.dumps(m, sort_keys=True, separators=(",", ":")).encode()
+        self._publish(self.root / "manifests" / f"{mid}.json", lambda f: f.write(data))
         return mid
 
     def load_manifest(self, mid: str) -> Manifest:
@@ -171,9 +195,7 @@ class Store:
             elif e["type"] == "symlink":
                 os.symlink(e["link"], full)
             else:
-                fd = os.open(full, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(fd, "wb") as f:
-                    f.write(self.read_blob(e["sha256"]))
+                self._restore_blob(e["sha256"], full)
 
         # Modes and mtimes last, deepest first: creating children changes a
         # directory's mtime, and a restrictive parent mode would block later
@@ -187,11 +209,30 @@ class Store:
 
         return diff(m, manifest(dest))
 
+    def _restore_blob(self, sha: str, dest_path: str) -> None:
+        """Stream blob `sha` into a new file, verifying its digest.
 
-def _read_nofollow(path: str) -> bytes:
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(fd, "rb") as f:
-        return f.read()
+        A digest mismatch raises, so restore never returns with corrupt
+        content; the partially restored destination must then be discarded.
+        """
+        src_fd = os.open(self.root / "blobs" / sha, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(src_fd, "rb") as src:
+            dst_fd = os.open(dest_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(dst_fd, "wb") as dst:
+                if _copy_hashing(src, dst) != sha:
+                    raise SnapshotError(f"blob {sha} is corrupt")
+
+
+CHUNK = 1 << 20
+
+
+def _copy_hashing(src: BinaryIO, dst: BinaryIO) -> str:
+    """Copy src to dst in CHUNK-sized pieces; return the sha256 of what was copied."""
+    h = hashlib.sha256()
+    for chunk in iter(lambda: src.read(CHUNK), b""):
+        h.update(chunk)
+        dst.write(chunk)
+    return h.hexdigest()
 
 
 def _validate(m: Manifest) -> None:

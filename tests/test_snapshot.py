@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -197,3 +198,76 @@ def test_restore_rejects_child_of_symlink(store, tmp_path):
     (store.root / "manifests" / f"{mid}.json").write_text(json.dumps(m, sort_keys=True, separators=(",", ":")))
     with pytest.raises(SnapshotError, match="parent"):
         store.restore(mid, tmp_path / "r")
+
+
+def test_large_file_capture_and_restore_stream_with_bounded_memory(tmp_path):
+    """A 64 MiB file must not be held in memory whole by capture or restore."""
+    import tracemalloc
+
+    root = tmp_path / "big"
+    root.mkdir()
+    size = 64 << 20
+    with open(root / "large.bin", "wb") as f:
+        block = os.urandom(1 << 20)
+        f.writelines(block for _ in range(size >> 20))
+    store = Store(tmp_path / "store")
+
+    tracemalloc.start()
+    try:
+        mid = store.capture(root)
+        _, capture_peak = tracemalloc.get_traced_memory()
+        tracemalloc.reset_peak()
+        assert store.restore(mid, tmp_path / "restored") == []
+        _, restore_peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert capture_peak < 8 << 20, capture_peak
+    assert restore_peak < 8 << 20, restore_peak
+    assert (tmp_path / "restored" / "large.bin").stat().st_size == size
+
+
+def test_concurrent_captures_of_identical_content_are_safe(tmp_path):
+    """Many writers publishing the same blobs at once: every capture succeeds,
+    every blob is intact, and no temp files are left behind."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    root = tmp_path / "same"
+    root.mkdir()
+    for i in range(20):
+        (root / f"f{i}.bin").write_bytes(bytes([i]) * (256 << 10))
+    store_root = tmp_path / "store"
+
+    def capture(_):
+        return Store(store_root).capture(root)  # separate Store objects, shared directory
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        ids = list(pool.map(capture, range(64)))
+    assert len(set(ids)) == 1
+    leftovers = [p.name for d in ("blobs", "manifests") for p in (store_root / d).iterdir()
+                 if p.name.startswith(".tmp-")]
+    assert leftovers == []
+    for blob in (store_root / "blobs").iterdir():
+        assert hashlib.sha256(blob.read_bytes()).hexdigest() == blob.name
+    assert Store(store_root).restore(ids[0], tmp_path / "r") == []
+
+
+def test_capture_detects_content_change_while_streaming(tmp_path, monkeypatch):
+    """If a file's bytes differ from its manifest digest when copied, capture
+    fails and publishes nothing."""
+    import forklab.snapshot as snap
+
+    root = tmp_path / "w"
+    root.mkdir()
+    (root / "a.txt").write_text("original")
+    store = Store(tmp_path / "store")
+    real = snap.manifest
+
+    def manifest_then_mutate(path):
+        m = real(path)
+        (root / "a.txt").write_text("mutated!")
+        return m
+
+    monkeypatch.setattr(snap, "manifest", manifest_then_mutate)
+    with pytest.raises(SnapshotError, match="changed during capture"):
+        store.capture(root)
+    assert list((store.root / "blobs").iterdir()) == []
