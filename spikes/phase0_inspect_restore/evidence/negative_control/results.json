@@ -1,0 +1,263 @@
+{
+  "environment": {
+    "anthropic_sdk": "2.8.0",
+    "docker_server": "29.8.0",
+    "inspect_ai": "0.3.289",
+    "model_string": "anthropic/claude-sonnet-5-5",
+    "platform": "macOS-15.0.1-arm64-arm-64bit",
+    "python": "3.12.1"
+  },
+  "generated_at": "2026-11-12T02:06:08.396554+00:00",
+  "negative_control_failed_sample": "tar_restore_b",
+  "samples": {
+    "files_only": {
+      "checks": {
+        "exactly_two_requests": true,
+        "final_completion_expected": true,
+        "first_request_is_fork_prefix": true,
+        "first_request_substituted_text_equal": true,
+        "manifest_captured": true,
+        "no_error": true,
+        "only_messages_endpoint": true,
+        "second_request_carries_live_result": true
+      },
+      "error": null,
+      "first_body_sha256": "86777c078b352c61d3554b698688fe202afcfada433f0ee718f572fc38a56a9a",
+      "passed": true,
+      "request_count": 2,
+      "request_paths": [
+        "/v1/messages",
+        "/v1/messages"
+      ],
+      "restore_diff": [
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "."
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "."
+        },
+        {
+          "actual": 1794449166979144004,
+          "expected": 1700000000900000001,
+          "field": "mtime_ns",
+          "path": "."
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "README.md"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "README.md"
+        },
+        {
+          "actual": 1794449165910144003,
+          "expected": 1700000000123456789,
+          "field": "mtime_ns",
+          "path": "README.md"
+        },
+        {
+          "path": "empty_dir",
+          "problem": "missing"
+        },
+        {
+          "path": "link_to_calc",
+          "problem": "missing"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src"
+        },
+        {
+          "actual": 1794449166770144003,
+          "expected": 1700000000333333333,
+          "field": "mtime_ns",
+          "path": "src"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src/blob.bin"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src/blob.bin"
+        },
+        {
+          "actual": 1794449166771144003,
+          "expected": 1700000000666666666,
+          "field": "mtime_ns",
+          "path": "src/blob.bin"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src/calc.py"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src/calc.py"
+        },
+        {
+          "actual": 1794449166089144003,
+          "expected": 1700000000444444444,
+          "field": "mtime_ns",
+          "path": "src/calc.py"
+        },
+        {
+          "actual": 420,
+          "expected": 384,
+          "field": "mode",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 1794449166420144003,
+          "expected": 1700000000555555555,
+          "field": "mtime_ns",
+          "path": "src/no_newline.txt"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "tests"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "tests"
+        },
+        {
+          "actual": 1794449167166144004,
+          "expected": 1700000000777777777,
+          "field": "mtime_ns",
+          "path": "tests"
+        },
+        {
+          "actual": 420,
+          "expected": 493,
+          "field": "mode",
+          "path": "tests/run.py"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "uid",
+          "path": "tests/run.py"
+        },
+        {
+          "actual": 0,
+          "expected": 1000,
+          "field": "gid",
+          "path": "tests/run.py"
+        },
+        {
+          "actual": 1794449167166144004,
+          "expected": 1700000000888888888,
+          "field": "mtime_ns",
+          "path": "tests/run.py"
+        }
+      ],
+      "restore_diff_count": 28,
+      "restore_exact": false
+    },
+    "tar_restore_a": {
+      "checks": {
+        "exactly_two_requests": true,
+        "final_completion_expected": true,
+        "first_request_is_fork_prefix": true,
+        "first_request_substituted_text_equal": true,
+        "manifest_captured": true,
+        "no_error": true,
+        "only_messages_endpoint": true,
+        "restore_exact": true,
+        "second_request_carries_live_result": true
+      },
+      "error": null,
+      "first_body_sha256": "86777c078b352c61d3554b698688fe202afcfada433f0ee718f572fc38a56a9a",
+      "passed": true,
+      "request_count": 2,
+      "request_paths": [
+        "/v1/messages",
+        "/v1/messages"
+      ],
+      "restore_diff": [],
+      "restore_diff_count": 0,
+      "restore_exact": true
+    },
+    "tar_restore_b": {
+      "checks": {
+        "exactly_two_requests": false,
+        "final_completion_expected": false,
+        "first_request_is_fork_prefix": false,
+        "first_request_substituted_text_equal": false,
+        "manifest_captured": true,
+        "no_error": false,
+        "only_messages_endpoint": true,
+        "restore_exact": true,
+        "second_request_carries_live_result": false
+      },
+      "error": "RetryError(<Future at 0x1092eb440 state=finished raised InternalServerError>)",
+      "first_body_sha256": "86777c078b352c61d3554b698688fe202afcfada433f0ee718f572fc38a56a9a",
+      "passed": false,
+      "request_count": 3,
+      "request_paths": [
+        "/v1/messages",
+        "/v1/messages",
+        "/v1/messages"
+      ],
+      "restore_diff": [],
+      "restore_diff_count": 0,
+      "restore_exact": true
+    }
+  },
+  "verdict": {
+    "Q1_prefix_accepted_as_input": false,
+    "Q2_tar_setup_restore_exact": true,
+    "Q3_substituted_text_equal_after_json_decode": false,
+    "expected_samples_ran": true,
+    "loop_resumed_with_live_result": false,
+    "missing_samples": [],
+    "observed_files_only_restore_exact": false,
+    "observed_first_request_raw_bytes_identical": true,
+    "passed": false,
+    "unexpected_samples": []
+  }
+}

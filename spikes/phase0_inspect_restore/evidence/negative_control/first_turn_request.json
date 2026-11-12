@@ -1,0 +1,81 @@
+{
+  "cache_control": {
+    "type": "ephemeral"
+  },
+  "max_tokens": 1024,
+  "messages": [
+    {
+      "content": "The tests fail. Investigate and fix.",
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "text": "I'll run the tests.",
+          "type": "text"
+        },
+        {
+          "cache_control": {
+            "type": "ephemeral"
+          },
+          "id": "toolu_fork_0001",
+          "input": {},
+          "name": "run_tests",
+          "type": "tool_use"
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "FAIL: add(2, 3) == -1  \n→ see src/other.py:12\t(arm b)",
+              "type": "text"
+            }
+          ],
+          "is_error": false,
+          "tool_use_id": "toolu_fork_0001",
+          "type": "tool_result"
+        }
+      ],
+      "role": "user"
+    }
+  ],
+  "model": "claude-sonnet-5-5",
+  "stream": false,
+  "system": [
+    {
+      "cache_control": {
+        "type": "ephemeral"
+      },
+      "text": "You are a coding agent. Fix the bug in /workspace.",
+      "type": "text"
+    }
+  ],
+  "thinking": {
+    "block_binding": {
+      "prefix_mismatch_behavior": "drop_block"
+    },
+    "type": "adaptive"
+  },
+  "tool_choice": {
+    "type": "auto"
+  },
+  "tools": [
+    {
+      "cache_control": {
+        "type": "ephemeral"
+      },
+      "description": "Run the test suite in /workspace.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "run_tests"
+    }
+  ]
+}
